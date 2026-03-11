@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BulletMemo</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e11;
+    --surface: #16161a;
+    --surface2: #1e1e24;
+    --border: #2a2a35;
+    --accent: #7b61ff;
+    --accent2: #ff6b6b;
+    --text: #e8e8f0;
+    --text2: #888899;
+    --text3: #555566;
+    --memo-color: #7b61ff;
+    --file-color: #ff6b6b;
+    --success: #4ecdc4;
+    --radius: 10px;
+    --font-ui: 'Syne', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-dot {
+    width: 10px; height: 10px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 12px var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.8); }
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .btn-icon {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    width: 36px; height: 36px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    transition: all 0.15s;
+  }
+
+  .btn-icon:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(123,97,255,0.08);
+  }
+
+  /* ── Layout ── */
+  .container {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    flex: 1;
+    overflow: hidden;
+    height: calc(100vh - 61px);
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  .search-wrap {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .search-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 14px 9px 36px;
+    border-radius: var(--radius);
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+
+  .search-wrap-inner {
+    position: relative;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text3);
+    font-size: 14px;
+    pointer-events: none;
+  }
+
+  .search-input:focus { border-color: var(--accent); }
+
+  .msg-list {
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .msg-list::-webkit-scrollbar { width: 4px; }
+  .msg-list::-webkit-scrollbar-track { background: transparent; }
+  .msg-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .msg-item {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.12s;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .msg-item:hover { background: var(--surface2); }
+  .msg-item.active { background: rgba(123,97,255,0.1); border-left: 2px solid var(--accent); }
+
+  .msg-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .msg-icon.memo { background: rgba(123,97,255,0.15); color: var(--memo-color); }
+  .msg-icon.file { background: rgba(255,107,107,0.15); color: var(--file-color); }
+  .msg-icon.image { background: rgba(78,205,196,0.15); color: var(--success); }
+  .msg-icon.audio { background: rgba(255,200,87,0.15); color: #ffc857; }
+  .msg-icon.video { background: rgba(255,107,107,0.15); color: var(--file-color); }
+
+  .msg-body { flex: 1; min-width: 0; }
+
+  .msg-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+  }
+
+  .msg-meta {
+    font-size: 0.72rem;
+    color: var(--text3);
+    font-family: var(--font-mono);
+    display: flex;
+    gap: 8px;
+  }
+
+  .msg-device {
+    color: var(--text2);
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+  }
+
+  /* ── Main panel ── */
+  .main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .main-toolbar {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    background: var(--surface);
+  }
+
+  .btn {
+    padding: 8px 18px;
+    border-radius: var(--radius);
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn-primary:hover { background: #9580ff; transform: translateY(-1px); }
+
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn-danger {
+    background: rgba(255,107,107,0.1);
+    color: var(--accent2);
+    border: 1px solid rgba(255,107,107,0.2);
+  }
+
+  .btn-danger:hover { background: rgba(255,107,107,0.2); }
+
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .spacer { flex: 1; }
+
+  /* ── Detail view ── */
+  .detail {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px;
+  }
+
+  .detail::-webkit-scrollbar { width: 4px; }
+  .detail::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    color: var(--text3);
+  }
+
+  .empty-icon { font-size: 48px; opacity: 0.3; }
+
+  .detail-header {
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .detail-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-bottom: 12px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .badge-memo { background: rgba(123,97,255,0.15); color: var(--memo-color); }
+  .badge-file { background: rgba(255,107,107,0.15); color: var(--file-color); }
+
+  .detail-meta {
+    font-size: 0.78rem;
+    color: var(--text2);
+    font-family: var(--font-mono);
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .detail-content {
+    font-size: 0.95rem;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
+  }
+
+  .file-info-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-top: 8px;
+  }
+
+  .file-big-icon {
+    font-size: 40px;
+    width: 64px; height: 64px;
+    background: var(--surface);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .file-info-text { flex: 1; }
+  .file-info-name {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+    word-break: break-all;
+  }
+
+  .file-info-size {
+    font-size: 0.78rem;
+    color: var(--text2);
+    font-family: var(--font-mono);
+  }
+
+  /* ── Compose panel ── */
+  .compose-panel {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(6px);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+
+  .compose-panel.open {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .compose-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 540px;
+    max-width: 95vw;
+    padding: 28px;
+    transform: translateY(16px);
+    transition: transform 0.2s;
+  }
+
+  .compose-panel.open .compose-box { transform: translateY(0); }
+
+  .compose-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .compose-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    background: var(--surface2);
+    padding: 4px;
+    border-radius: var(--radius);
+  }
+
+  .compose-tab {
+    flex: 1;
+    padding: 7px;
+    border: none;
+    background: none;
+    color: var(--text2);
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    font-weight: 600;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .compose-tab.active {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+
+  textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    resize: none;
+    outline: none;
+    transition: border-color 0.15s;
+    min-height: 140px;
+  }
+
+  textarea:focus { border-color: var(--accent); }
+
+  .file-drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 40px;
+    text-align: center;
+    color: var(--text3);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 0.85rem;
+  }
+
+  .file-drop-zone:hover, .file-drop-zone.dragover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(123,97,255,0.05);
+  }
+
+  .file-drop-icon { font-size: 28px; margin-bottom: 10px; }
+  .file-selected-name {
+    margin-top: 10px;
+    font-size: 0.8rem;
+    color: var(--success);
+    font-family: var(--font-mono);
+  }
+
+  .compose-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  /* ── Settings panel ── */
+  .settings-panel {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(6px);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+
+  .settings-panel.open {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .settings-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 480px;
+    max-width: 95vw;
+    padding: 28px;
+    transform: translateY(16px);
+    transition: transform 0.2s;
+  }
+
+  .settings-panel.open .settings-box { transform: translateY(0); }
+
+  .form-group { margin-bottom: 18px; }
+
+  .form-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text2);
+    margin-bottom: 6px;
+    display: block;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: var(--font-mono);
+  }
+
+  .form-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .form-input:focus { border-color: var(--accent); }
+  .form-hint {
+    font-size: 0.72rem;
+    color: var(--text3);
+    margin-top: 5px;
+    font-family: var(--font-mono);
+  }
+
+  /* ── Progress bar ── */
+  .progress-bar-wrap {
+    position: fixed;
+    top: 61px;
+    left: 0; right: 0;
+    height: 3px;
+    background: var(--border);
+    z-index: 150;
+    display: none;
+  }
+
+  .progress-bar-wrap.show { display: block; }
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--success));
+    width: 0%;
+    transition: width 0.3s;
+  }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 18px;
+    font-size: 0.85rem;
+    z-index: 300;
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.25s;
+    max-width: 320px;
+  }
+
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { border-color: var(--success); color: var(--success); }
+  .toast.error { border-color: var(--accent2); color: var(--accent2); }
+
+  /* ── Loading state ── */
+  .loading-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    color: var(--text3);
+  }
+
+  .spinner {
+    width: 32px; height: 32px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Unconfigured state ── */
+  .unconfigured {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    text-align: center;
+    padding: 32px;
+  }
+
+  .unconfigured-icon { font-size: 52px; opacity: 0.4; }
+
+  /* ── Count badge ── */
+  .count-badge {
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    color: var(--text3);
+    padding: 2px 8px;
+    background: var(--surface2);
+    border-radius: 20px;
+  }
+
+  /* ── Scrollbar for detail ── */
+  .detail::-webkit-scrollbar { width: 4px; }
+
+  @media (max-width: 700px) {
+    .container { grid-template-columns: 1fr; }
+    .main { display: none; }
+    .container.detail-open .sidebar { display: none; }
+    .container.detail-open .main { display: flex; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div class="progress-bar-wrap" id="progressWrap">
+  <div class="progress-bar" id="progressBar"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    BulletMemo
+  </div>
+  <div class="header-actions">
+    <span class="count-badge" id="countBadge">0 items</span>
+    <button class="btn-icon" onclick="refreshMessages()" title="更新">↻</button>
+    <button class="btn-icon" onclick="openSettings()" title="設定">⚙</button>
+  </div>
+</header>
+
+<!-- Main layout -->
+<div class="container" id="container">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="search-wrap">
+      <div class="search-wrap-inner">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="searchInput" placeholder="検索..." oninput="filterMessages(this.value)">
+      </div>
+    </div>
+    <div class="msg-list" id="msgList">
+      <div class="loading-overlay" id="loadingState">
+        <div class="spinner"></div>
+        <span>読み込み中...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main panel -->
+  <div class="main">
+    <div class="main-toolbar" id="mainToolbar">
+      <button class="btn btn-primary" onclick="openCompose()">＋ 新規メッセージ</button>
+      <div class="spacer"></div>
+      <button class="btn btn-danger" id="btnDelete" style="display:none" onclick="deleteSelected()">削除</button>
+      <button class="btn btn-secondary" id="btnDownload" style="display:none" onclick="downloadSelected()">⬇ ダウンロード</button>
+      <button class="btn btn-secondary" id="btnCopy" style="display:none" onclick="copySelected()">コピー</button>
+    </div>
+    <div class="detail" id="detail">
+      <div class="empty-state">
+        <div class="empty-icon">💬</div>
+        <div>メッセージを選択してください</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Compose panel -->
+<div class="compose-panel" id="composePanel">
+  <div class="compose-box">
+    <div class="compose-title">
+      <span>新規メッセージ</span>
+      <button class="btn-icon" onclick="closeCompose()">✕</button>
+    </div>
+    <div class="compose-tabs">
+      <button class="compose-tab active" id="tabMemo" onclick="switchTab('memo')">📝 メモ</button>
+      <button class="compose-tab" id="tabFile" onclick="switchTab('file')">📎 ファイル</button>
+    </div>
+    <div id="memoPane">
+      <textarea id="memoInput" placeholder="メモを入力..."></textarea>
+    </div>
+    <div id="filePane" style="display:none">
+      <div class="file-drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+           ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <div class="file-drop-icon">📂</div>
+        <div>クリックまたはドラッグ＆ドロップ</div>
+        <div style="font-size:0.75rem; margin-top:6px; color: var(--text3)">最大2GBまで対応</div>
+        <div class="file-selected-name" id="selectedFileName"></div>
+      </div>
+      <input type="file" id="fileInput" style="display:none" onchange="onFileSelected(this)">
+    </div>
+    <div class="compose-actions">
+      <button class="btn btn-secondary" onclick="closeCompose()">キャンセル</button>
+      <button class="btn btn-primary" id="btnSend" onclick="sendMessage()">送信</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings panel -->
+<div class="settings-panel" id="settingsPanel">
+  <div class="settings-box">
+    <div class="compose-title">
+      <span>設定</span>
+      <button class="btn-icon" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Dropbox Access Token</label>
+      <input class="form-input" type="password" id="tokenInput" placeholder="sl.xxxxxxxxxx">
+      <div class="form-hint">Dropbox App Console → BulletMemo → Settings → Generated access token</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">このデバイスの名前</label>
+      <input class="form-input" type="text" id="deviceInput" placeholder="PC, Windows など">
+    </div>
+    <div class="compose-actions">
+      <button class="btn btn-secondary" onclick="closeSettings()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveSettings()">保存して接続</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let token = localStorage.getItem('bm_token') || '';
+let deviceName = localStorage.getItem('bm_device') || 'PC';
+let messages = [];
+let selectedId = null;
+let currentTab = 'memo';
+let selectedFile = null;
+
+const CONTENT_BASE = 'https://content.dropboxapi.com/2';
+const API_BASE = 'https://api.dropboxapi.com/2';
+const MESSAGES_PATH = '/messages.json';
+const FILES_FOLDER = '/files';
+
+// ── Init ──
+window.addEventListener('load', () => {
+  if (token) {
+    fetchMessages();
+  } else {
+    showUnconfigured();
+    openSettings();
+  }
+});
+
+// ── UI helpers ──
+function showToast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  setTimeout(() => el.className = 'toast', 3000);
+}
+
+function setProgress(pct) {
+  const wrap = document.getElementById('progressWrap');
+  const bar = document.getElementById('progressBar');
+  if (pct >= 100) {
+    bar.style.width = '100%';
+    setTimeout(() => { wrap.classList.remove('show'); bar.style.width = '0%'; }, 400);
+  } else {
+    wrap.classList.add('show');
+    bar.style.width = pct + '%';
+  }
+}
+
+function showUnconfigured() {
+  document.getElementById('msgList').innerHTML = `
+    <div class="unconfigured">
+      <div class="unconfigured-icon">🔑</div>
+      <div style="font-size:0.9rem; color:var(--text2)">設定からDropboxトークンを入力してください</div>
+    </div>`;
+  document.getElementById('detail').innerHTML = `
+    <div class="empty-state"><div class="empty-icon">⚙</div><div>右上の設定アイコンからトークンを設定</div></div>`;
+}
+
+// ── Fetch messages ──
+async function fetchMessages() {
+  document.getElementById('msgList').innerHTML = `
+    <div class="loading-overlay"><div class="spinner"></div><span>読み込み中...</span></div>`;
+  setProgress(30);
+  try {
+    const res = await fetch(`${CONTENT_BASE}/files/download`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Dropbox-API-Arg': JSON.stringify({ path: MESSAGES_PATH }),
+      }
+    });
+    setProgress(80);
+    if (res.status === 409) {
+      messages = [];
+    } else if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    } else {
+      messages = await res.json();
+      messages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+    setProgress(100);
+    renderList(messages);
+  } catch (e) {
+    setProgress(100);
+    document.getElementById('msgList').innerHTML = `
+      <div class="unconfigured">
+        <div class="unconfigured-icon">⚠️</div>
+        <div style="color:var(--accent2); font-size:0.85rem">${e.message}</div>
+        <button class="btn btn-secondary" style="margin-top:8px" onclick="fetchMessages()">再試行</button>
+      </div>`;
+    showToast('取得失敗: ' + e.message, 'error');
+  }
+}
+
+function refreshMessages() { fetchMessages(); }
+
+// ── Render list ──
+function renderList(list) {
+  document.getElementById('countBadge').textContent = `${list.length} items`;
+  if (list.length === 0) {
+    document.getElementById('msgList').innerHTML = `
+      <div class="empty-state" style="padding:40px; color:var(--text3); font-size:0.85rem">メッセージがありません</div>`;
+    return;
+  }
+  document.getElementById('msgList').innerHTML = list.map(m => `
+    <div class="msg-item ${m.id === selectedId ? 'active' : ''}" onclick="selectMessage('${m.id}')">
+      <div class="msg-icon ${getIconClass(m)}">${getIconEmoji(m)}</div>
+      <div class="msg-body">
+        <div class="msg-title">${escHtml(m.type === 'memo' ? m.content.split('\n')[0] || '（空のメモ）' : m.content)}</div>
+        <div class="msg-meta">
+          <span>${formatDate(m.createdAt)}</span>
+          <span class="msg-device">${escHtml(m.device || '')}</span>
+          ${m.fileSize ? `<span>${formatSize(m.fileSize)}</span>` : ''}
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function filterMessages(q) {
+  const filtered = q
+    ? messages.filter(m => m.content.toLowerCase().includes(q.toLowerCase()))
+    : messages;
+  renderList(filtered);
+}
+
+// ── Select message ──
+function selectMessage(id) {
+  selectedId = id;
+  const msg = messages.find(m => m.id === id);
+  if (!msg) return;
+
+  // Update list highlight
+  document.querySelectorAll('.msg-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+
+  // Show toolbar buttons
+  document.getElementById('btnDelete').style.display = '';
+  document.getElementById('btnCopy').style.display = msg.type === 'memo' ? '' : 'none';
+  document.getElementById('btnDownload').style.display = msg.type === 'file' ? '' : 'none';
+
+  // Render detail
+  const detail = document.getElementById('detail');
+  const dateStr = new Date(msg.createdAt).toLocaleString('ja-JP');
+
+  if (msg.type === 'memo') {
+    detail.innerHTML = `
+      <div class="detail-header">
+        <div class="detail-type-badge badge-memo">📝 メモ</div>
+        <div class="detail-meta">
+          <span>${dateStr}</span>
+          <span>${escHtml(msg.device || '')}</span>
+        </div>
+      </div>
+      <div class="detail-content">${escHtml(msg.content)}</div>`;
+  } else {
+    detail.innerHTML = `
+      <div class="detail-header">
+        <div class="detail-type-badge badge-file">📎 ファイル</div>
+        <div class="detail-meta">
+          <span>${dateStr}</span>
+          <span>${escHtml(msg.device || '')}</span>
+        </div>
+      </div>
+      <div class="file-info-card">
+        <div class="file-big-icon">${getIconEmoji(msg)}</div>
+        <div class="file-info-text">
+          <div class="file-info-name">${escHtml(msg.content)}</div>
+          <div class="file-info-size">${msg.mimeType || ''} ${msg.fileSize ? '· ' + formatSize(msg.fileSize) : ''}</div>
+        </div>
+      </div>`;
+  }
+}
+
+// ── Copy / Download / Delete ──
+function copySelected() {
+  const msg = messages.find(m => m.id === selectedId);
+  if (!msg) return;
+  navigator.clipboard.writeText(msg.content);
+  showToast('コピーしました');
+}
+
+async function downloadSelected() {
+  const msg = messages.find(m => m.id === selectedId);
+  if (!msg || !msg.filePath) return;
+
+  showToast('ダウンロード開始...');
+  setProgress(20);
+  try {
+    const res = await fetch(`${CONTENT_BASE}/files/download`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Dropbox-API-Arg': JSON.stringify({ path: msg.filePath }),
+      }
+    });
+    setProgress(80);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = msg.content;
+    a.click();
+    URL.revokeObjectURL(url);
+    setProgress(100);
+    showToast('ダウンロード完了');
+  } catch (e) {
+    setProgress(100);
+    showToast('ダウンロード失敗: ' + e.message, 'error');
+  }
+}
+
+async function deleteSelected() {
+  const msg = messages.find(m => m.id === selectedId);
+  if (!msg) return;
+  if (!confirm(`「${msg.content.substring(0, 30)}」を削除しますか？`)) return;
+
+  // Dropboxファイル削除
+  if (msg.type === 'file' && msg.filePath) {
+    try {
+      await fetch(`${API_BASE}/files/delete_v2`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: msg.filePath })
+      });
+    } catch (_) {}
+  }
+
+  messages = messages.filter(m => m.id !== selectedId);
+  selectedId = null;
+  document.getElementById('btnDelete').style.display = 'none';
+  document.getElementById('btnCopy').style.display = 'none';
+  document.getElementById('btnDownload').style.display = 'none';
+  document.getElementById('detail').innerHTML = `
+    <div class="empty-state"><div class="empty-icon">💬</div><div>メッセージを選択してください</div></div>`;
+
+  await saveMessages();
+  renderList(messages);
+  showToast('削除しました');
+}
+
+// ── Save messages ──
+async function saveMessages() {
+  const content = JSON.stringify(messages);
+  const res = await fetch(`${CONTENT_BASE}/files/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+      'Dropbox-API-Arg': JSON.stringify({ path: MESSAGES_PATH, mode: 'overwrite', autorename: false, mute: true }),
+    },
+    body: new TextEncoder().encode(content)
+  });
+  if (!res.ok) throw new Error('保存失敗');
+}
+
+// ── Compose ──
+function openCompose() {
+  document.getElementById('composePanel').classList.add('open');
+  document.getElementById('memoInput').focus();
+}
+
+function closeCompose() {
+  document.getElementById('composePanel').classList.remove('open');
+  document.getElementById('memoInput').value = '';
+  selectedFile = null;
+  document.getElementById('selectedFileName').textContent = '';
+  document.getElementById('fileInput').value = '';
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tabMemo').classList.toggle('active', tab === 'memo');
+  document.getElementById('tabFile').classList.toggle('active', tab === 'file');
+  document.getElementById('memoPane').style.display = tab === 'memo' ? '' : 'none';
+  document.getElementById('filePane').style.display = tab === 'file' ? '' : 'none';
+}
+
+function onFileSelected(input) {
+  selectedFile = input.files[0] || null;
+  document.getElementById('selectedFileName').textContent = selectedFile ? selectedFile.name : '';
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.add('dragover');
+}
+
+function onDragLeave(e) {
+  document.getElementById('dropZone').classList.remove('dragover');
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('dragover');
+  selectedFile = e.dataTransfer.files[0] || null;
+  document.getElementById('selectedFileName').textContent = selectedFile ? selectedFile.name : '';
+}
+
+async function sendMessage() {
+  const btn = document.getElementById('btnSend');
+  btn.disabled = true;
+
+  try {
+    if (currentTab === 'memo') {
+      const text = document.getElementById('memoInput').value.trim();
+      if (!text) { showToast('メモを入力してください', 'error'); return; }
+      const msg = {
+        id: Date.now().toString(),
+        type: 'memo',
+        content: text,
+        createdAt: new Date().toISOString(),
+        device: deviceName
+      };
+      messages.unshift(msg);
+      await saveMessages();
+      showToast('送信しました');
+    } else {
+      if (!selectedFile) { showToast('ファイルを選択してください', 'error'); return; }
+      setProgress(10);
+      const dropboxPath = `${FILES_FOLDER}/${selectedFile.name}`;
+      const res = await fetch(`${CONTENT_BASE}/files/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/octet-stream',
+          'Dropbox-API-Arg': JSON.stringify({ path: dropboxPath, mode: 'add', autorename: true }),
+        },
+        body: selectedFile
+      });
+      setProgress(80);
+      if (!res.ok) throw new Error(`アップロード失敗: HTTP ${res.status}`);
+      const data = await res.json();
+      const msg = {
+        id: Date.now().toString(),
+        type: 'file',
+        content: data.name,
+        filePath: data.path_display,
+        fileSize: selectedFile.size,
+        mimeType: selectedFile.type || 'application/octet-stream',
+        createdAt: new Date().toISOString(),
+        device: deviceName
+      };
+      messages.unshift(msg);
+      await saveMessages();
+      setProgress(100);
+      showToast('アップロード完了');
+    }
+
+    renderList(messages);
+    closeCompose();
+  } catch (e) {
+    setProgress(100);
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Settings ──
+function openSettings() {
+  document.getElementById('tokenInput').value = token;
+  document.getElementById('deviceInput').value = deviceName;
+  document.getElementById('settingsPanel').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settingsPanel').classList.remove('open');
+}
+
+async function saveSettings() {
+  const t = document.getElementById('tokenInput').value.trim();
+  const d = document.getElementById('deviceInput').value.trim() || 'PC';
+  if (!t) { showToast('トークンを入力してください', 'error'); return; }
+
+  // 検証
+  try {
+    const res = await fetch(`${API_BASE}/users/get_current_account`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${t}`, 'Content-Type': 'application/json' },
+      body: 'null'
+    });
+    if (!res.ok) throw new Error('無効なトークンです');
+  } catch (e) {
+    showToast(e.message, 'error');
+    return;
+  }
+
+  token = t;
+  deviceName = d;
+  localStorage.setItem('bm_token', token);
+  localStorage.setItem('bm_device', deviceName);
+  closeSettings();
+  showToast('設定を保存しました');
+  fetchMessages();
+}
+
+// ── Helpers ──
+function getIconClass(m) {
+  if (m.type === 'memo') return 'memo';
+  const mime = m.mimeType || '';
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime.startsWith('video/')) return 'video';
+  return 'file';
+}
+
+function getIconEmoji(m) {
+  if (m.type === 'memo') return '📝';
+  const mime = m.mimeType || '';
+  if (mime.startsWith('image/')) return '🖼️';
+  if (mime.startsWith('audio/')) return '🎵';
+  if (mime.startsWith('video/')) return '🎬';
+  if (mime.includes('pdf')) return '📄';
+  return '📎';
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + 'KB';
+  if (bytes < 1024*1024*1024) return (bytes/(1024*1024)).toFixed(1) + 'MB';
+  return (bytes/(1024*1024*1024)).toFixed(2) + 'GB';
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
