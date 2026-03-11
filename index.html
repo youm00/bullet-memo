@@ -824,7 +824,7 @@ async function fetchMessages() {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Dropbox-API-Arg': JSON.stringify({ path: MESSAGES_PATH }),
+        'Dropbox-API-Arg': dropboxHeader({ path: MESSAGES_PATH }),
       }
     });
     setProgress(80);
@@ -948,7 +948,7 @@ async function downloadSelected() {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Dropbox-API-Arg': JSON.stringify({ path: msg.filePath }),
+        'Dropbox-API-Arg': dropboxHeader({ path: msg.filePath }),
       }
     });
     setProgress(80);
@@ -1005,7 +1005,7 @@ async function saveMessages() {
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/octet-stream',
-      'Dropbox-API-Arg': JSON.stringify({ path: MESSAGES_PATH, mode: 'overwrite', autorename: false, mute: true }),
+      'Dropbox-API-Arg': dropboxHeader({ path: MESSAGES_PATH, mode: 'overwrite', autorename: false, mute: true }),
     },
     body: new TextEncoder().encode(content)
   });
@@ -1082,7 +1082,7 @@ async function sendMessage() {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/octet-stream',
-          'Dropbox-API-Arg': JSON.stringify({ path: dropboxPath, mode: 'add', autorename: true }),
+          'Dropbox-API-Arg': dropboxHeader({ path: dropboxPath, mode: 'add', autorename: true }),
         },
         body: selectedFile
       });
@@ -1187,6 +1187,13 @@ function formatSize(bytes) {
 
 function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function dropboxHeader(obj) {
+  // ISO-8859-1範囲外の文字（日本語など）をUnicodeエスケープする
+  return JSON.stringify(obj).replace(/[^\x00-\x7F]/g, c =>
+    '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')
+  );
 }
 </script>
 </body>
