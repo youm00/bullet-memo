@@ -862,9 +862,9 @@ function renderList(list) {
     return;
   }
   document.getElementById('msgList').innerHTML = list.map(m => `
-    <div class="msg-item ${m.id === selectedId ? 'active' : ''}" data-id="${m.id}">
-      <div class="msg-icon ${getIconClass(m)}">${getIconEmoji(m)}</div>
-      <div class="msg-body">
+    <div class="msg-item ${m.id === selectedId ? 'active' : ''}" data-id="${m.id}" onclick="selectMessage('${m.id}')">
+      <div class="msg-icon ${getIconClass(m)}" style="pointer-events:none">${getIconEmoji(m)}</div>
+      <div class="msg-body" style="pointer-events:none">
         <div class="msg-title">${escHtml(m.type === 'memo' ? m.content.split('\n')[0] || '（空のメモ）' : m.content)}</div>
         <div class="msg-meta">
           <span>${formatDate(m.createdAt)}</span>
@@ -873,22 +873,25 @@ function renderList(list) {
         </div>
       </div>
     </div>`).join('');
-
-  // イベントリスナーをまとめて登録
-  document.querySelectorAll('.msg-item').forEach(item => {
-    item.addEventListener('click', () => selectMessage(item.dataset.id));
-  });
 }
 
 function filterMessages(q) {
-  const filtered = q
+  const filtered = q.trim()
     ? messages.filter(m => m.content.toLowerCase().includes(q.toLowerCase()))
     : messages;
   renderList(filtered);
+  // 選択中アイテムのハイライトを復元
+  if (selectedId) {
+    const item = document.querySelector(`.msg-item[data-id="${selectedId}"]`);
+    if (item) item.classList.add('active');
+  }
 }
 
 // ── Select message ──
 function selectMessage(id) {
+  // 検索欄からフォーカスを外す
+  document.getElementById('searchInput').blur();
+
   selectedId = id;
   const msg = messages.find(m => m.id === id);
   if (!msg) return;
