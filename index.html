@@ -833,7 +833,10 @@ async function fetchMessages() {
     } else if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     } else {
-      messages = await res.json();
+      // 明示的にUTF-8としてデコードしてからJSONパース
+      const bytes = await res.arrayBuffer();
+      const text = new TextDecoder('utf-8').decode(bytes);
+      messages = JSON.parse(text);
       messages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     }
     setProgress(100);
@@ -889,7 +892,8 @@ function selectMessage(id) {
 
   // Update list highlight
   document.querySelectorAll('.msg-item').forEach(el => el.classList.remove('active'));
-  event.currentTarget.classList.add('active');
+  const activeEl = document.querySelector(`.msg-item[onclick="selectMessage('${id}')"]`);
+  if (activeEl) activeEl.classList.add('active');
 
   // Show toolbar buttons
   document.getElementById('btnDelete').style.display = '';
