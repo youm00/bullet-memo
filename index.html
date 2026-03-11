@@ -864,7 +864,7 @@ function renderList(list) {
     return;
   }
   document.getElementById('msgList').innerHTML = list.map(m => `
-    <div class="msg-item ${m.id === selectedId ? 'active' : ''}" data-id="${m.id}" onclick="selectMessage(this)">
+    <div class="msg-item ${m.id === selectedId ? 'active' : ''}" data-id="${m.id}">
       <div class="msg-icon ${getIconClass(m)}">${getIconEmoji(m)}</div>
       <div class="msg-body">
         <div class="msg-title">${escHtml(m.type === 'memo' ? m.content.split('\n')[0] || '（空のメモ）' : m.content)}</div>
@@ -875,6 +875,11 @@ function renderList(list) {
         </div>
       </div>
     </div>`).join('');
+
+  // イベントリスナーをまとめて登録
+  document.querySelectorAll('.msg-item').forEach(item => {
+    item.addEventListener('click', () => selectMessage(item.dataset.id));
+  });
 }
 
 function filterMessages(q) {
@@ -885,17 +890,15 @@ function filterMessages(q) {
 }
 
 // ── Select message ──
-function selectMessage(el) {
-  // クリックされた要素またはその親から data-id を取得
-  const item = el.closest('.msg-item') || el;
-  const id = item.dataset.id;
+function selectMessage(id) {
   selectedId = id;
   const msg = messages.find(m => m.id === id);
   if (!msg) return;
 
   // Update list highlight
   document.querySelectorAll('.msg-item').forEach(e => e.classList.remove('active'));
-  item.classList.add('active');
+  const item = document.querySelector(`.msg-item[data-id="${id}"]`);
+  if (item) item.classList.add('active');
 
   // Show toolbar buttons
   document.getElementById('btnDelete').style.display = '';
