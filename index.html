@@ -775,8 +775,8 @@ const API_BASE = 'https://api.dropboxapi.com/2';
 const MESSAGES_PATH = '/messages.json';
 const FILES_FOLDER = '/files';
 const APP_KEY = 'dtcyhvor146kvw7';
-const APP_SECRET = '7fgyzvczdlgqn62';
 const REDIRECT_URI = 'https://youm00.github.io/bullet-memo/';
+const WORKER_URL = 'https://bullet-memo-auth.youm00.workers.dev';
 
 // ── OAuth2 helpers ──
 function startOAuth() {
@@ -792,16 +792,10 @@ function startOAuth() {
 }
 
 async function exchangeCodeForTokens(code) {
-  const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
+  const res = await fetch(`${WORKER_URL}/token/exchange`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code,
-      grant_type: 'authorization_code',
-      client_id: APP_KEY,
-      client_secret: APP_SECRET,
-      redirect_uri: REDIRECT_URI,
-    })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, redirect_uri: REDIRECT_URI })
   });
   if (!res.ok) throw new Error('トークン取得失敗');
   const data = await res.json();
@@ -810,15 +804,10 @@ async function exchangeCodeForTokens(code) {
 
 async function refreshAccessToken() {
   if (!refreshToken) throw new Error('再認証が必要です');
-  const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
+  const res = await fetch(`${WORKER_URL}/token/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: APP_KEY,
-      client_secret: APP_SECRET,
-    })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken })
   });
   if (!res.ok) throw new Error('トークン更新失敗');
   const data = await res.json();
