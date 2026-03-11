@@ -743,17 +743,18 @@
       <button class="btn-icon" onclick="closeSettings()">✕</button>
     </div>
     <div class="form-group">
-      <label class="form-label">Dropbox Access Token</label>
-      <input class="form-input" type="password" id="tokenInput" placeholder="sl.xxxxxxxxxx">
-      <div class="form-hint">Dropbox App Console → BulletMemo → Settings → Generated access token</div>
-    </div>
-    <div class="form-group">
       <label class="form-label">このデバイスの名前</label>
       <input class="form-input" type="text" id="deviceInput" placeholder="PC, Windows など">
+      <div class="form-hint">メッセージに表示されるデバイス名</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Dropbox 認証状態</label>
+      <div id="authStatus" style="font-size:0.85rem; color:var(--text2); font-family:var(--font-mono); padding:8px 0;"></div>
     </div>
     <div class="compose-actions">
       <button class="btn btn-secondary" onclick="closeSettings()">キャンセル</button>
-      <button class="btn btn-primary" onclick="saveSettings()">保存して接続</button>
+      <button class="btn btn-secondary" id="btnReauth" onclick="startOAuth()">🔑 Dropboxで再認証</button>
+      <button class="btn btn-primary" onclick="saveSettings()">保存</button>
     </div>
   </div>
 </div>
@@ -761,6 +762,8 @@
 <script>
 // ── State ──
 let token = localStorage.getItem('bm_token') || '';
+let refreshToken = localStorage.getItem('bm_refresh_token') || '';
+let tokenExpiry = parseInt(localStorage.getItem('bm_token_expiry') || '0');
 let deviceName = localStorage.getItem('bm_device') || 'PC';
 let messages = [];
 let selectedId = null;
@@ -771,10 +774,107 @@ const CONTENT_BASE = 'https://content.dropboxapi.com/2';
 const API_BASE = 'https://api.dropboxapi.com/2';
 const MESSAGES_PATH = '/messages.json';
 const FILES_FOLDER = '/files';
+const APP_KEY = 'dtcyhvor146kvw7';
+const APP_SECRET = '7fgyzvczdlgqn62';
+const REDIRECT_URI = 'https://youm00.github.io/bullet-memo/';
+
+// ── OAuth2 helpers ──
+function startOAuth() {
+  const state = Math.random().toString(36).slice(2);
+  sessionStorage.setItem('oauth_state', state);
+  const url = `https://www.dropbox.com/oauth2/authorize`
+    + `?client_id=${APP_KEY}`
+    + `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`
+    + `&response_type=code`
+    + `&token_access_type=offline`
+    + `&state=${state}`;
+  location.href = url;
+}
+
+async function exchangeCodeForTokens(code) {
+  const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      grant_type: 'authorization_code',
+      client_id: APP_KEY,
+      client_secret: APP_SECRET,
+      redirect_uri: REDIRECT_URI,
+    })
+  });
+  if (!res.ok) throw new Error('トークン取得失敗');
+  const data = await res.json();
+  saveTokens(data);
+}
+
+async function refreshAccessToken() {
+  if (!refreshToken) throw new Error('再認証が必要です');
+  const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: APP_KEY,
+      client_secret: APP_SECRET,
+    })
+  });
+  if (!res.ok) throw new Error('トークン更新失敗');
+  const data = await res.json();
+  saveTokens(data);
+}
+
+function saveTokens(data) {
+  token = data.access_token;
+  if (data.refresh_token) {
+    refreshToken = data.refresh_token;
+    localStorage.setItem('bm_refresh_token', refreshToken);
+  }
+  // expiry: now + expires_in秒 - 5分バッファ
+  const expiry = Date.now() + (data.expires_in - 300) * 1000;
+  tokenExpiry = expiry;
+  localStorage.setItem('bm_token', token);
+  localStorage.setItem('bm_token_expiry', String(expiry));
+}
+
+async function ensureValidToken() {
+  if (!refreshToken) throw new Error('認証されていません');
+  if (Date.now() > tokenExpiry) {
+    await refreshAccessToken();
+  }
+}
 
 // ── Init ──
-window.addEventListener('load', () => {
-  if (token) {
+window.addEventListener('load', async () => {
+  // OAuthコールバック処理
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  if (code && state && state === sessionStorage.getItem('oauth_state')) {
+    sessionStorage.removeItem('oauth_state');
+    history.replaceState({}, '', REDIRECT_URI);
+    try {
+      await exchangeCodeForTokens(code);
+      showToast('認証成功！');
+      fetchMessages();
+    } catch (e) {
+      showToast('認証失敗: ' + e.message, 'error');
+      showUnconfigured();
+    }
+    return;
+  }
+
+  if (refreshToken) {
+    try {
+      await ensureValidToken();
+      fetchMessages();
+    } catch (e) {
+      showUnconfigured();
+      openSettings();
+    }
+  } else if (token) {
+    // 旧方式トークンがある場合はそのまま使う
     fetchMessages();
   } else {
     showUnconfigured();
@@ -818,6 +918,7 @@ async function fetchMessages() {
     <div class="loading-overlay"><div class="spinner"></div><span>読み込み中...</span></div>`;
   setProgress(30);
   try {
+    await ensureValidToken();
     const res = await fetch(`${CONTENT_BASE}/files/download`, {
       method: 'POST',
       headers: {
@@ -951,6 +1052,7 @@ async function downloadSelected() {
   showToast('ダウンロード開始...');
   setProgress(20);
   try {
+    await ensureValidToken();
     const res = await fetch(`${CONTENT_BASE}/files/download`, {
       method: 'POST',
       headers: {
@@ -1006,6 +1108,7 @@ async function deleteSelected() {
 
 // ── Save messages ──
 async function saveMessages() {
+  await ensureValidToken();
   const content = JSON.stringify(messages);
   const res = await fetch(`${CONTENT_BASE}/files/upload`, {
     method: 'POST',
@@ -1124,8 +1227,14 @@ async function sendMessage() {
 
 // ── Settings ──
 function openSettings() {
-  document.getElementById('tokenInput').value = token;
   document.getElementById('deviceInput').value = deviceName;
+  const authEl = document.getElementById('authStatus');
+  if (refreshToken) {
+    const exp = new Date(tokenExpiry + 300000).toLocaleString('ja-JP');
+    authEl.innerHTML = `<span style="color:var(--success)">✓ 認証済み</span>（次回更新: ${exp}）`;
+  } else {
+    authEl.innerHTML = `<span style="color:var(--accent2)">✗ 未認証</span>　→「Dropboxで再認証」を押してください`;
+  }
   document.getElementById('settingsPanel').classList.add('open');
 }
 
@@ -1134,30 +1243,11 @@ function closeSettings() {
 }
 
 async function saveSettings() {
-  const t = document.getElementById('tokenInput').value.trim();
   const d = document.getElementById('deviceInput').value.trim() || 'PC';
-  if (!t) { showToast('トークンを入力してください', 'error'); return; }
-
-  // 検証
-  try {
-    const res = await fetch(`${API_BASE}/users/get_current_account`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${t}`, 'Content-Type': 'application/json' },
-      body: 'null'
-    });
-    if (!res.ok) throw new Error('無効なトークンです');
-  } catch (e) {
-    showToast(e.message, 'error');
-    return;
-  }
-
-  token = t;
   deviceName = d;
-  localStorage.setItem('bm_token', token);
   localStorage.setItem('bm_device', deviceName);
   closeSettings();
   showToast('設定を保存しました');
-  fetchMessages();
 }
 
 // ── Helpers ──
