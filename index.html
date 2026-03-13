@@ -643,6 +643,111 @@
     .container.detail-open .sidebar { display: none; }
     .container.detail-open .main { display: flex; }
   }
+
+  /* ── Image thumbnail (sidebar) ── */
+  .msg-thumbnail {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .msg-thumbnail:hover { opacity: 0.8; }
+  .msg-thumbnail-placeholder {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    color: var(--success);
+  }
+
+  /* ── Image preview (detail panel) ── */
+  .detail-image-wrap {
+    margin-top: 20px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    display: inline-block;
+    max-width: 100%;
+    cursor: zoom-in;
+    transition: opacity 0.15s;
+  }
+  .detail-image-wrap:hover { opacity: 0.9; }
+  .detail-image {
+    display: block;
+    max-width: 100%;
+    max-height: 420px;
+    object-fit: contain;
+  }
+  .detail-image-hint {
+    font-size: 0.72rem;
+    color: var(--text3);
+    font-family: var(--font-mono);
+    padding: 6px 10px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+  }
+
+  /* ── Lightbox (fullscreen viewer) ── */
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    backdrop-filter: blur(8px);
+    z-index: 500;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+    animation: fadeIn 0.18s ease;
+  }
+  .lightbox.open { display: flex; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .lightbox-img {
+    max-width: 92vw;
+    max-height: 92vh;
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 8px 60px rgba(0,0,0,0.8);
+    cursor: default;
+    user-select: none;
+  }
+
+  .lightbox-close {
+    position: fixed;
+    top: 20px;
+    right: 24px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    z-index: 501;
+  }
+  .lightbox-close:hover { background: rgba(255,255,255,0.18); }
 </style>
 </head>
 <body>
@@ -759,6 +864,12 @@
   </div>
 </div>
 
+<!-- Lightbox (fullscreen image viewer) -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()" title="閉じる">✕</button>
+  <img class="lightbox-img" id="lightboxImg" src="" alt="" onclick="event.stopPropagation()">
+</div>
+
 <script>
 // ── State ──
 let token = localStorage.getItem('bm_token') || '';
@@ -777,6 +888,33 @@ const FILES_FOLDER = '/files';
 const APP_KEY = 'dtcyhvor146kvw7';
 const REDIRECT_URI = 'https://youm00.github.io/bullet-memo/';
 const WORKER_URL = 'https://bullet-memo-auth.youm00.workers.dev';
+
+// ── Image URL cache (filePath → {url, expiry}) ──
+const imgUrlCache = {};
+
+async function getImageUrl(filePath) {
+  const now = Date.now();
+  const cached = imgUrlCache[filePath];
+  // Dropbox temporary_link は4時間有効。30分前に再取得
+  if (cached && cached.expiry > now) return cached.url;
+
+  await ensureValidToken();
+  const res = await fetch(`${API_BASE}/files/get_temporary_link`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path: filePath })
+  });
+  if (!res.ok) throw new Error(`一時URL取得失敗: HTTP ${res.status}`);
+  const data = await res.json();
+  imgUrlCache[filePath] = {
+    url: data.link,
+    expiry: now + (4 * 60 - 30) * 60 * 1000  // 3時間30分
+  };
+  return data.link;
+}
 
 // ── OAuth2 helpers ──
 function startOAuth() {
@@ -951,9 +1089,15 @@ function renderList(list) {
       <div class="empty-state" style="padding:40px; color:var(--text3); font-size:0.85rem">メッセージがありません</div>`;
     return;
   }
-  document.getElementById('msgList').innerHTML = list.map(m => `
+  document.getElementById('msgList').innerHTML = list.map(m => {
+    const isImage = m.type === 'file' && (m.mimeType || '').startsWith('image/');
+    const thumbnailHtml = isImage
+      ? `<div class="msg-thumbnail-placeholder" id="thumb-${m.id}" data-path="${escHtml(m.filePath || '')}">🖼️</div>`
+      : '';
+    return `
     <div class="msg-item ${m.id === selectedId ? 'active' : ''}" data-id="${m.id}" onclick="selectMessage('${m.id}')">
-      <div class="msg-icon ${getIconClass(m)}" style="pointer-events:none">${getIconEmoji(m)}</div>
+      <div class="msg-icon ${getIconClass(m)}" style="pointer-events:none;${isImage ? 'display:none' : ''}">${getIconEmoji(m)}</div>
+      ${thumbnailHtml}
       <div class="msg-body" style="pointer-events:none">
         <div class="msg-title">${escHtml(m.type === 'memo' ? m.content.split('\n')[0] || '（空のメモ）' : m.content)}</div>
         <div class="msg-meta">
@@ -962,7 +1106,34 @@ function renderList(list) {
           ${m.fileSize ? `<span>${formatSize(m.fileSize)}</span>` : ''}
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+
+  // サムネイルを非同期で読み込み
+  list.forEach(m => {
+    if (m.type === 'file' && (m.mimeType || '').startsWith('image/') && m.filePath) {
+      loadThumbnail(m.id, m.filePath);
+    }
+  });
+}
+
+async function loadThumbnail(id, filePath) {
+  const el = document.getElementById(`thumb-${id}`);
+  if (!el) return;
+  try {
+    const url = await getImageUrl(filePath);
+    // 要素がまだDOMにあるか確認
+    const current = document.getElementById(`thumb-${id}`);
+    if (!current) return;
+    const img = document.createElement('img');
+    img.className = 'msg-thumbnail';
+    img.src = url;
+    img.alt = '';
+    img.style.pointerEvents = 'none';
+    current.replaceWith(img);
+  } catch (_) {
+    // 失敗時はプレースホルダーのまま
+  }
 }
 
 function filterMessages(q) {
@@ -1008,6 +1179,7 @@ function selectMessage(id) {
       </div>
       <div class="detail-content">${escHtml(msg.content)}</div>`;
   } else {
+    const isImage = (msg.mimeType || '').startsWith('image/');
     detail.innerHTML = `
       <div class="detail-header">
         <div class="detail-type-badge badge-file">📎 ファイル</div>
@@ -1022,8 +1194,52 @@ function selectMessage(id) {
           <div class="file-info-name">${escHtml(msg.content)}</div>
           <div class="file-info-size">${msg.mimeType || ''} ${msg.fileSize ? '· ' + formatSize(msg.fileSize) : ''}</div>
         </div>
-      </div>`;
+      </div>
+      ${isImage && msg.filePath ? `<div id="detailImageArea" style="margin-top:20px;"><div style="color:var(--text3);font-size:0.8rem;font-family:var(--font-mono)">🖼️ 画像を読み込み中...</div></div>` : ''}`;
+
+    if (isImage && msg.filePath) {
+      loadDetailImage(msg.filePath, msg.content);
+    }
   }
+}
+
+// ── Image detail preview ──
+async function loadDetailImage(filePath, altText) {
+  const area = document.getElementById('detailImageArea');
+  if (!area) return;
+  try {
+    const url = await getImageUrl(filePath);
+    const areaEl = document.getElementById('detailImageArea');
+    if (!areaEl) return; // ユーザーが別のメッセージを選んだ場合
+    areaEl.innerHTML = `
+      <div class="detail-image-wrap" onclick="openLightbox('${url.replace(/'/g,"\\'")}', '${escHtml(altText).replace(/'/g,"\\'")}')">
+        <img class="detail-image" src="${url}" alt="${escHtml(altText)}">
+        <div class="detail-image-hint">クリックで全画面表示</div>
+      </div>`;
+  } catch (e) {
+    const areaEl = document.getElementById('detailImageArea');
+    if (areaEl) areaEl.innerHTML = `<div style="color:var(--accent2);font-size:0.8rem;font-family:var(--font-mono)">画像の読み込みに失敗しました</div>`;
+  }
+}
+
+// ── Lightbox ──
+function openLightbox(url, alt) {
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lightboxImg');
+  img.src = url;
+  img.alt = alt || '';
+  lb.classList.add('open');
+  document.addEventListener('keydown', onLightboxKey);
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lightboxImg').src = '';
+  document.removeEventListener('keydown', onLightboxKey);
+}
+
+function onLightboxKey(e) {
+  if (e.key === 'Escape') closeLightbox();
 }
 
 // ── Copy / Download / Delete ──
