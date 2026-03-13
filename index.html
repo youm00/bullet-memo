@@ -687,7 +687,7 @@
   .detail-image {
     display: block;
     max-width: 100%;
-    max-height: 420px;
+    max-height: 560px;
     object-fit: contain;
   }
   .detail-image-hint {
@@ -1180,28 +1180,41 @@ function selectMessage(id) {
       <div class="detail-content">${escHtml(msg.content)}</div>`;
   } else {
     const isImage = (msg.mimeType || '').startsWith('image/');
-    detail.innerHTML = `
-      <div class="detail-header">
-        <div class="detail-type-badge badge-file">📎 ファイル</div>
-        <div class="detail-meta">
-          <span>${dateStr}</span>
-          <span>${escHtml(msg.device || '')}</span>
-        </div>
-      </div>
-      <div class="file-info-card">
-        <div class="file-big-icon">${getIconEmoji(msg)}</div>
-        <div class="file-info-text">
-          <div class="file-info-name">${escHtml(msg.content)}</div>
-          <div class="file-info-size">${msg.mimeType || ''} ${msg.fileSize ? '· ' + formatSize(msg.fileSize) : ''}</div>
-        </div>
-      </div>
-      ${isImage && msg.filePath ? `<div id="detailImageArea" style="margin-top:20px;"><div style="color:var(--text3);font-size:0.8rem;font-family:var(--font-mono)">🖼️ 画像を読み込み中...</div></div>` : ''}`;
-
     if (isImage && msg.filePath) {
+      // 画像ファイル：プレビューをメインに、ファイル情報はキャプションとして下に
+      detail.innerHTML = `
+        <div class="detail-header">
+          <div class="detail-type-badge badge-file">🖼️ 画像</div>
+          <div class="detail-meta">
+            <span>${dateStr}</span>
+            <span>${escHtml(msg.device || '')}</span>
+          </div>
+        </div>
+        <div id="detailImageArea"><div style="color:var(--text3);font-size:0.8rem;font-family:var(--font-mono)">🖼️ 画像を読み込み中...</div></div>
+        <div style="margin-top:12px; font-size:0.8rem; font-family:var(--font-mono); color:var(--text2);">
+          ${escHtml(msg.content)}
+          <span style="color:var(--text3); margin-left:10px;">${msg.mimeType || ''} ${msg.fileSize ? '· ' + formatSize(msg.fileSize) : ''}</span>
+        </div>`;
       loadDetailImage(msg.filePath, msg.content);
+    } else {
+      // 画像以外のファイル：従来のカード表示
+      detail.innerHTML = `
+        <div class="detail-header">
+          <div class="detail-type-badge badge-file">📎 ファイル</div>
+          <div class="detail-meta">
+            <span>${dateStr}</span>
+            <span>${escHtml(msg.device || '')}</span>
+          </div>
+        </div>
+        <div class="file-info-card">
+          <div class="file-big-icon">${getIconEmoji(msg)}</div>
+          <div class="file-info-text">
+            <div class="file-info-name">${escHtml(msg.content)}</div>
+            <div class="file-info-size">${msg.mimeType || ''} ${msg.fileSize ? '· ' + formatSize(msg.fileSize) : ''}</div>
+          </div>
+        </div>`;
     }
   }
-}
 
 // ── Image detail preview ──
 async function loadDetailImage(filePath, altText) {
