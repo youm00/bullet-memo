@@ -834,7 +834,7 @@
       <input type="file" id="fileInput" style="display:none" onchange="onFileSelected(this)">
     </div>
     <div class="compose-actions">
-      <button class="btn btn-secondary" onclick="closeCompose()">キャンセル</button>
+      <button class="btn btn-secondary" id="btnCancel" onclick="closeCompose()">キャンセル</button>
       <button class="btn btn-primary" id="btnSend" onclick="sendMessage()">送信</button>
     </div>
     <div id="uploadStatus" style="display:none; margin-top:10px; font-size:0.78rem; font-family:var(--font-mono); color:var(--text2); text-align:center;"></div>
@@ -881,6 +881,7 @@ let messages = [];
 let selectedId = null;
 let currentTab = 'memo';
 let selectedFile = null;
+let uploadAbortController = null; // アップロードキャンセル用
 
 const CONTENT_BASE = 'https://content.dropboxapi.com/2';
 const API_BASE = 'https://api.dropboxapi.com/2';
@@ -1349,12 +1350,23 @@ function openCompose() {
 }
 
 function closeCompose() {
+  // アップロード中であれば中断
+  if (uploadAbortController) {
+    uploadAbortController.abort();
+    uploadAbortController = null;
+    setProgress(100);
+    showToast('アップロードをキャンセルしました', 'error');
+  }
   document.getElementById('composePanel').classList.remove('open');
   document.getElementById('memoInput').value = '';
   selectedFile = null;
   document.getElementById('selectedFileName').textContent = '';
   document.getElementById('fileInput').value = '';
   setUploadStatus('');
+  // ボタン表示をリセット
+  const btnCancel = document.getElementById('btnCancel');
+  if (btnCancel) btnCancel.textContent = 'キャンセル';
+  document.getElementById('btnSend').disabled = false;
 }
 
 function switchTab(tab) {
@@ -1388,7 +1400,12 @@ function onDrop(e) {
 
 async function sendMessage() {
   const btn = document.getElementById('btnSend');
+  const btnCancel = document.getElementById('btnCancel');
   btn.disabled = true;
+  if (btnCancel) btnCancel.textContent = '⛔ 転送中断';
+
+  // AbortController を生成してアップロード中に使う
+  uploadAbortController = new AbortController();
 
   try {
     if (currentTab === 'memo') {
@@ -1432,14 +1449,18 @@ async function sendMessage() {
       showToast('アップロード完了');
     }
 
+    uploadAbortController = null;
     renderList(messages);
     closeCompose();
   } catch (e) {
+    // abort による中断は closeCompose 側で処理済みなので無視
+    if (e.name === 'AbortError') return;
     setProgress(100);
     setUploadStatus('');
     showToast(e.message, 'error');
-  } finally {
+    uploadAbortController = null;
     btn.disabled = false;
+    if (btnCancel) btnCancel.textContent = 'キャンセル';
   }
 }
 
@@ -1455,7 +1476,8 @@ async function uploadSmall(file) {
       'Content-Type': 'application/octet-stream',
       'Dropbox-API-Arg': dropboxHeader({ path: dropboxPath, mode: 'add', autorename: true }),
     },
-    body: file
+    body: file,
+    signal: uploadAbortController.signal,
   });
   setProgress(90);
   if (!res.ok) throw new Error(`アップロード失敗: HTTP ${res.status}`);
@@ -1467,6 +1489,7 @@ async function uploadSession(file) {
   const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB per chunk
   const totalSize = file.size;
   let offset = 0;
+  const signal = uploadAbortController.signal;
 
   setUploadStatus(`大容量ファイル: チャンク分割アップロード開始...`);
   setProgress(2);
@@ -1480,7 +1503,8 @@ async function uploadSession(file) {
       'Content-Type': 'application/octet-stream',
       'Dropbox-API-Arg': dropboxHeader({ close: false }),
     },
-    body: firstChunk
+    body: firstChunk,
+    signal,
   });
   if (!startRes.ok) throw new Error(`セッション開始失敗: HTTP ${startRes.status}`);
   const startData = await startRes.json();
@@ -1499,7 +1523,8 @@ async function uploadSession(file) {
         'Content-Type': 'application/octet-stream',
         'Dropbox-API-Arg': dropboxHeader({ cursor: { session_id: sessionId, offset }, close: false }),
       },
-      body: chunk
+      body: chunk,
+      signal,
     });
     if (!appendRes.ok) throw new Error(`チャンク送信失敗: HTTP ${appendRes.status} (offset: ${offset})`);
     offset += chunk.size;
@@ -1520,7 +1545,8 @@ async function uploadSession(file) {
         commit: { path: dropboxPath, mode: 'add', autorename: true }
       }),
     },
-    body: lastChunk
+    body: lastChunk,
+    signal,
   });
   if (!finishRes.ok) throw new Error(`セッション終了失敗: HTTP ${finishRes.status}`);
   return await finishRes.json();
