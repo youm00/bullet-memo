@@ -837,6 +837,7 @@
       <button class="btn btn-secondary" onclick="closeCompose()">キャンセル</button>
       <button class="btn btn-primary" id="btnSend" onclick="sendMessage()">送信</button>
     </div>
+    <div id="uploadStatus" style="display:none; margin-top:10px; font-size:0.78rem; font-family:var(--font-mono); color:var(--text2); text-align:center;"></div>
   </div>
 </div>
 
@@ -1353,6 +1354,7 @@ function closeCompose() {
   selectedFile = null;
   document.getElementById('selectedFileName').textContent = '';
   document.getElementById('fileInput').value = '';
+  setUploadStatus('');
 }
 
 function switchTab(tab) {
@@ -1404,20 +1406,15 @@ async function sendMessage() {
       showToast('送信しました');
     } else {
       if (!selectedFile) { showToast('ファイルを選択してください', 'error'); return; }
-      setProgress(10);
-      const dropboxPath = `${FILES_FOLDER}/${selectedFile.name}`;
-      const res = await fetch(`${CONTENT_BASE}/files/upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/octet-stream',
-          'Dropbox-API-Arg': dropboxHeader({ path: dropboxPath, mode: 'add', autorename: true }),
-        },
-        body: selectedFile
-      });
-      setProgress(80);
-      if (!res.ok) throw new Error(`アップロード失敗: HTTP ${res.status}`);
-      const data = await res.json();
+
+      const CHUNK_THRESHOLD = 150 * 1024 * 1024; // 150MB
+      let data;
+      if (selectedFile.size < CHUNK_THRESHOLD) {
+        data = await uploadSmall(selectedFile);
+      } else {
+        data = await uploadSession(selectedFile);
+      }
+
       const msg = {
         id: Date.now().toString(),
         type: 'file',
@@ -1431,6 +1428,7 @@ async function sendMessage() {
       messages.unshift(msg);
       await saveMessages();
       setProgress(100);
+      setUploadStatus('');
       showToast('アップロード完了');
     }
 
@@ -1438,10 +1436,101 @@ async function sendMessage() {
     closeCompose();
   } catch (e) {
     setProgress(100);
+    setUploadStatus('');
     showToast(e.message, 'error');
   } finally {
     btn.disabled = false;
   }
+}
+
+// ── 通常アップロード（150MB未満）──
+async function uploadSmall(file) {
+  setProgress(10);
+  setUploadStatus(`アップロード中... ${formatSize(file.size)}`);
+  const dropboxPath = `${FILES_FOLDER}/${file.name}`;
+  const res = await fetch(`${CONTENT_BASE}/files/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+      'Dropbox-API-Arg': dropboxHeader({ path: dropboxPath, mode: 'add', autorename: true }),
+    },
+    body: file
+  });
+  setProgress(90);
+  if (!res.ok) throw new Error(`アップロード失敗: HTTP ${res.status}`);
+  return await res.json();
+}
+
+// ── セッションアップロード（150MB以上）──
+async function uploadSession(file) {
+  const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB per chunk
+  const totalSize = file.size;
+  let offset = 0;
+
+  setUploadStatus(`大容量ファイル: チャンク分割アップロード開始...`);
+  setProgress(2);
+
+  // 1. セッション開始（最初のチャンク）
+  const firstChunk = file.slice(0, Math.min(CHUNK_SIZE, totalSize));
+  const startRes = await fetch(`${CONTENT_BASE}/files/upload_session/start`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+      'Dropbox-API-Arg': dropboxHeader({ close: false }),
+    },
+    body: firstChunk
+  });
+  if (!startRes.ok) throw new Error(`セッション開始失敗: HTTP ${startRes.status}`);
+  const startData = await startRes.json();
+  const sessionId = startData.session_id;
+  offset += firstChunk.size;
+  setProgress(Math.round((offset / totalSize) * 90));
+  setUploadStatus(`アップロード中... ${formatSize(offset)} / ${formatSize(totalSize)}`);
+
+  // 2. 中間チャンクを送信
+  while (offset + CHUNK_SIZE < totalSize) {
+    const chunk = file.slice(offset, offset + CHUNK_SIZE);
+    const appendRes = await fetch(`${CONTENT_BASE}/files/upload_session/append_v2`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/octet-stream',
+        'Dropbox-API-Arg': dropboxHeader({ cursor: { session_id: sessionId, offset }, close: false }),
+      },
+      body: chunk
+    });
+    if (!appendRes.ok) throw new Error(`チャンク送信失敗: HTTP ${appendRes.status} (offset: ${offset})`);
+    offset += chunk.size;
+    setProgress(Math.round((offset / totalSize) * 90));
+    setUploadStatus(`アップロード中... ${formatSize(offset)} / ${formatSize(totalSize)}`);
+  }
+
+  // 3. 最終チャンクでセッション終了＆ファイル確定
+  const lastChunk = file.slice(offset);
+  const dropboxPath = `${FILES_FOLDER}/${file.name}`;
+  const finishRes = await fetch(`${CONTENT_BASE}/files/upload_session/finish`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+      'Dropbox-API-Arg': dropboxHeader({
+        cursor: { session_id: sessionId, offset },
+        commit: { path: dropboxPath, mode: 'add', autorename: true }
+      }),
+    },
+    body: lastChunk
+  });
+  if (!finishRes.ok) throw new Error(`セッション終了失敗: HTTP ${finishRes.status}`);
+  return await finishRes.json();
+}
+
+function setUploadStatus(msg) {
+  const el = document.getElementById('uploadStatus');
+  if (!el) return;
+  el.style.display = msg ? 'block' : 'none';
+  el.textContent = msg;
 }
 
 // ── Settings ──
