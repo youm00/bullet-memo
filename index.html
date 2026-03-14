@@ -748,6 +748,86 @@
     z-index: 501;
   }
   .lightbox-close:hover { background: rgba(255,255,255,0.18); }
+
+  /* ── Polling bar ── */
+  #polling-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    flex-wrap: wrap;
+  }
+  #polling-bar .polling-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text2);
+    user-select: none;
+  }
+  /* Toggle switch */
+  .toggle-wrap {
+    position: relative;
+    width: 34px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+  .toggle-wrap input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .toggle-track {
+    position: absolute;
+    inset: 0;
+    background: var(--border);
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle-track::after {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: var(--text2);
+    border-radius: 50%;
+    top: 3px;
+    left: 3px;
+    transition: left 0.2s, background 0.2s;
+  }
+  .toggle-wrap input:checked + .toggle-track { background: var(--accent); }
+  .toggle-wrap input:checked + .toggle-track::after {
+    left: 19px;
+    background: #fff;
+  }
+  #polling-interval {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    display: none;
+  }
+  #polling-interval.visible { display: inline-block; }
+  #polling-status {
+    margin-left: auto;
+    color: var(--text3);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    transition: color 0.2s;
+  }
+  #polling-status.active { color: var(--success); }
+  #polling-status.updating {
+    color: var(--accent);
+    animation: pollingPulse 0.8s ease-in-out infinite alternate;
+  }
+  @keyframes pollingPulse {
+    from { opacity: 0.6; }
+    to   { opacity: 1; }
+  }
 </style>
 </head>
 <body>
@@ -773,7 +853,22 @@
   </div>
 </header>
 
-<!-- Main layout -->
+<!-- Polling bar -->
+<div id="polling-bar">
+  <label class="polling-label">
+    <span class="toggle-wrap">
+      <input type="checkbox" id="pollingToggle">
+      <span class="toggle-track"></span>
+    </span>
+    自動更新
+  </label>
+  <select id="polling-interval">
+    <option value="30">30秒</option>
+    <option value="60">60秒</option>
+    <option value="120">120秒</option>
+  </select>
+  <span id="polling-status">OFF</span>
+</div>
 <div class="container" id="container">
   <!-- Sidebar -->
   <div class="sidebar">
@@ -1626,6 +1721,87 @@ function dropboxHeader(obj) {
     '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')
   );
 }
+
+// ============================================================
+// ポーリング機能
+// ============================================================
+(function initPolling() {
+  const toggle   = document.getElementById('pollingToggle');
+  const interval = document.getElementById('polling-interval');
+  const status   = document.getElementById('polling-status');
+
+  let timer = null;
+  let nextTick = 0; // 次回実行予定の timestamp
+  let countdownTimer = null;
+
+  // 設定を復元
+  const savedEnabled  = localStorage.getItem('pollingEnabled') === 'true';
+  const savedInterval = localStorage.getItem('pollingInterval') || '60';
+  toggle.checked    = savedEnabled;
+  interval.value    = savedInterval;
+  if (savedEnabled) interval.classList.add('visible');
+
+  function setStatus(text, cls) {
+    status.textContent = text;
+    status.className   = cls || '';
+  }
+
+  function formatTime(date) {
+    return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function startCountdown() {
+    if (countdownTimer) clearInterval(countdownTimer);
+    countdownTimer = setInterval(() => {
+      if (!timer) return; // ポーリング停止済みなら何もしない
+      const remaining = Math.max(0, Math.round((nextTick - Date.now()) / 1000));
+      setStatus(`次回更新まで ${remaining}秒`, 'active');
+    }, 1000);
+  }
+
+  async function doPoll() {
+    setStatus('更新中...', 'updating');
+    try {
+      await fetchMessages();
+      setStatus(`最終更新: ${formatTime(new Date())}`, 'active');
+    } catch (e) {
+      setStatus('更新失敗', '');
+    }
+    // 次回カウントダウンを開始
+    const sec = parseInt(interval.value, 10);
+    nextTick = Date.now() + sec * 1000;
+    startCountdown();
+  }
+
+  function startPolling() {
+    stopPolling();
+    const sec = parseInt(interval.value, 10);
+    nextTick = Date.now() + sec * 1000;
+    timer = setInterval(doPoll, sec * 1000);
+    startCountdown();
+  }
+
+  function stopPolling() {
+    if (timer)         { clearInterval(timer);         timer = null; }
+    if (countdownTimer){ clearInterval(countdownTimer); countdownTimer = null; }
+    setStatus('OFF', '');
+  }
+
+  toggle.addEventListener('change', () => {
+    const enabled = toggle.checked;
+    localStorage.setItem('pollingEnabled', enabled);
+    interval.classList.toggle('visible', enabled);
+    enabled ? startPolling() : stopPolling();
+  });
+
+  interval.addEventListener('change', () => {
+    localStorage.setItem('pollingInterval', interval.value);
+    if (toggle.checked) startPolling(); // 間隔変更時は即リスタート
+  });
+
+  // 初期状態
+  if (savedEnabled) startPolling();
+})();
 </script>
 </body>
 </html>
