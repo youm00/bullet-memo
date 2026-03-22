@@ -749,6 +749,57 @@
   }
   .lightbox-close:hover { background: rgba(255,255,255,0.18); }
 
+  /* ── Edit panel ── */
+  .edit-panel {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(6px);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .edit-panel.open {
+    display: flex;
+    opacity: 1;
+  }
+
+  .edit-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 540px;
+    max-width: 95vw;
+    padding: 28px;
+    transform: translateY(16px);
+    transition: transform 0.2s;
+  }
+
+  .edit-panel.open .edit-box { transform: translateY(0); }
+
+  .edit-dates {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    color: var(--text3);
+    margin-bottom: 14px;
+  }
+
+  .edited-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #7b9fff;
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+  }
+
   /* ── Polling bar ── */
   #polling-bar {
     display: flex;
@@ -892,6 +943,7 @@
       <button class="btn btn-primary" onclick="openCompose()">＋ 新規メッセージ</button>
       <div class="spacer"></div>
       <button class="btn btn-danger" id="btnDelete" style="display:none" onclick="deleteSelected()">削除</button>
+      <button class="btn btn-secondary" id="btnEdit" style="display:none" onclick="openEdit()">✏ 編集</button>
       <button class="btn btn-secondary" id="btnDownload" style="display:none" onclick="downloadSelected()">⬇ ダウンロード</button>
       <button class="btn btn-secondary" id="btnCopy" style="display:none" onclick="copySelected()">コピー</button>
     </div>
@@ -956,6 +1008,30 @@
       <button class="btn btn-secondary" onclick="closeSettings()">キャンセル</button>
       <button class="btn btn-secondary" id="btnReauth" onclick="startOAuth()">🔑 Dropboxで再認証</button>
       <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit panel -->
+<div class="edit-panel" id="editPanel">
+  <div class="edit-box">
+    <div class="compose-title">
+      <span id="editPanelTitle">編集</span>
+      <button class="btn-icon" onclick="closeEdit()">✕</button>
+    </div>
+    <div class="edit-dates" id="editDates"></div>
+    <div id="editMemoPane">
+      <label class="form-label">メモ本文</label>
+      <textarea id="editMemoInput" style="min-height:160px;"></textarea>
+    </div>
+    <div id="editFilePane" style="display:none">
+      <label class="form-label">ファイル名</label>
+      <input class="form-input" type="text" id="editFileNameInput">
+      <div class="form-hint">※ Dropbox上の実ファイルのパスは変更されません</div>
+    </div>
+    <div class="compose-actions">
+      <button class="btn btn-secondary" onclick="closeEdit()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveEdit()">保存</button>
     </div>
   </div>
 </div>
@@ -1201,6 +1277,7 @@ function renderList(list) {
           <span>${formatDate(m.createdAt)}</span>
           <span class="msg-device">${escHtml(m.device || '')}</span>
           ${m.fileSize ? `<span>${formatSize(m.fileSize)}</span>` : ''}
+          ${m.updatedAt ? `<span class="edited-badge">✏</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -1258,12 +1335,16 @@ function selectMessage(id) {
 
   // Show toolbar buttons
   document.getElementById('btnDelete').style.display = '';
+  document.getElementById('btnEdit').style.display = '';
   document.getElementById('btnCopy').style.display = msg.type === 'memo' ? '' : 'none';
   document.getElementById('btnDownload').style.display = msg.type === 'file' ? '' : 'none';
 
   // Render detail
   const detail = document.getElementById('detail');
   const dateStr = new Date(msg.createdAt).toLocaleString('ja-JP');
+  const updatedStr = msg.updatedAt
+    ? `<span class="edited-badge">✏ 最終編集: ${new Date(msg.updatedAt).toLocaleString('ja-JP')}</span>`
+    : '';
 
   if (msg.type === 'memo') {
     detail.innerHTML = `
@@ -1272,6 +1353,7 @@ function selectMessage(id) {
         <div class="detail-meta">
           <span>${dateStr}</span>
           <span>${escHtml(msg.device || '')}</span>
+          ${updatedStr}
         </div>
       </div>
       <div class="detail-content">${escHtml(msg.content)}</div>`;
@@ -1285,6 +1367,7 @@ function selectMessage(id) {
           <div class="detail-meta">
             <span>${dateStr}</span>
             <span>${escHtml(msg.device || '')}</span>
+            ${updatedStr}
           </div>
         </div>
         <div id="detailImageArea"><div style="color:var(--text3);font-size:0.8rem;font-family:var(--font-mono)">🖼️ 画像を読み込み中...</div></div>
@@ -1301,6 +1384,7 @@ function selectMessage(id) {
           <div class="detail-meta">
             <span>${dateStr}</span>
             <span>${escHtml(msg.device || '')}</span>
+            ${updatedStr}
           </div>
         </div>
         <div class="file-info-card">
@@ -1412,6 +1496,7 @@ async function deleteSelected() {
   messages = messages.filter(m => m.id !== selectedId);
   selectedId = null;
   document.getElementById('btnDelete').style.display = 'none';
+  document.getElementById('btnEdit').style.display = 'none';
   document.getElementById('btnCopy').style.display = 'none';
   document.getElementById('btnDownload').style.display = 'none';
   document.getElementById('detail').innerHTML = `
@@ -1420,6 +1505,67 @@ async function deleteSelected() {
   await saveMessages();
   renderList(messages);
   showToast('削除しました');
+}
+
+// ── Edit message ──
+function openEdit() {
+  const msg = messages.find(m => m.id === selectedId);
+  if (!msg) return;
+
+  const isMemo = msg.type === 'memo';
+  document.getElementById('editPanelTitle').textContent = isMemo ? 'メモを編集' : 'ファイル名を編集';
+
+  // 日時表示
+  const createdStr = `作成: ${new Date(msg.createdAt).toLocaleString('ja-JP')}`;
+  const updatedStr = msg.updatedAt ? `　最終編集: ${new Date(msg.updatedAt).toLocaleString('ja-JP')}` : '';
+  document.getElementById('editDates').textContent = createdStr + updatedStr;
+
+  if (isMemo) {
+    document.getElementById('editMemoPane').style.display = '';
+    document.getElementById('editFilePane').style.display = 'none';
+    document.getElementById('editMemoInput').value = msg.content;
+    setTimeout(() => document.getElementById('editMemoInput').focus(), 50);
+  } else {
+    document.getElementById('editMemoPane').style.display = 'none';
+    document.getElementById('editFilePane').style.display = '';
+    document.getElementById('editFileNameInput').value = msg.content;
+    setTimeout(() => document.getElementById('editFileNameInput').focus(), 50);
+  }
+
+  document.getElementById('editPanel').classList.add('open');
+}
+
+function closeEdit() {
+  document.getElementById('editPanel').classList.remove('open');
+}
+
+async function saveEdit() {
+  const msg = messages.find(m => m.id === selectedId);
+  if (!msg) return;
+
+  const isMemo = msg.type === 'memo';
+  const newContent = isMemo
+    ? document.getElementById('editMemoInput').value
+    : document.getElementById('editFileNameInput').value.trim();
+
+  // 変更なしなら閉じるだけ
+  if (newContent === msg.content || (!isMemo && newContent === '')) {
+    closeEdit();
+    return;
+  }
+
+  msg.content = newContent;
+  msg.updatedAt = new Date().toISOString();
+
+  try {
+    await saveMessages();
+    closeEdit();
+    renderList(messages);
+    selectMessage(selectedId); // detail を再描画
+    showToast('保存しました');
+  } catch (e) {
+    showToast('保存失敗: ' + e.message, 'error');
+  }
 }
 
 // ── Save messages ──
