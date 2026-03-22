@@ -922,11 +922,11 @@
       <div class="file-drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
            ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
         <div class="file-drop-icon">📂</div>
-        <div>クリックまたはドラッグ＆ドロップ</div>
+        <div>クリックまたはドラッグ＆ドロップ（複数選択可）</div>
         <div style="font-size:0.75rem; margin-top:6px; color: var(--text3)">最大2GBまで対応</div>
         <div class="file-selected-name" id="selectedFileName"></div>
       </div>
-      <input type="file" id="fileInput" style="display:none" onchange="onFileSelected(this)">
+      <input type="file" id="fileInput" style="display:none" multiple onchange="onFileSelected(this)">
     </div>
     <div class="compose-actions">
       <button class="btn btn-secondary" id="btnCancel" onclick="closeCompose()">キャンセル</button>
@@ -975,7 +975,7 @@ let deviceName = localStorage.getItem('bm_device') || 'PC';
 let messages = [];
 let selectedId = null;
 let currentTab = 'memo';
-let selectedFile = null;
+let selectedFiles = []; // 複数ファイル対応
 let uploadAbortController = null; // アップロードキャンセル用
 
 const CONTENT_BASE = 'https://content.dropboxapi.com/2';
@@ -1454,7 +1454,7 @@ function closeCompose() {
   }
   document.getElementById('composePanel').classList.remove('open');
   document.getElementById('memoInput').value = '';
-  selectedFile = null;
+  selectedFiles = [];
   document.getElementById('selectedFileName').textContent = '';
   document.getElementById('fileInput').value = '';
   setUploadStatus('');
@@ -1473,8 +1473,19 @@ function switchTab(tab) {
 }
 
 function onFileSelected(input) {
-  selectedFile = input.files[0] || null;
-  document.getElementById('selectedFileName').textContent = selectedFile ? selectedFile.name : '';
+  selectedFiles = Array.from(input.files);
+  updateSelectedFileNames();
+}
+
+function updateSelectedFileNames() {
+  const el = document.getElementById('selectedFileName');
+  if (selectedFiles.length === 0) {
+    el.textContent = '';
+  } else if (selectedFiles.length === 1) {
+    el.textContent = selectedFiles[0].name;
+  } else {
+    el.textContent = `${selectedFiles.length}件選択: ${selectedFiles.map(f => f.name).join(', ')}`;
+  }
 }
 
 function onDragOver(e) {
@@ -1489,8 +1500,8 @@ function onDragLeave(e) {
 function onDrop(e) {
   e.preventDefault();
   document.getElementById('dropZone').classList.remove('dragover');
-  selectedFile = e.dataTransfer.files[0] || null;
-  document.getElementById('selectedFileName').textContent = selectedFile ? selectedFile.name : '';
+  selectedFiles = Array.from(e.dataTransfer.files);
+  updateSelectedFileNames();
 }
 
 async function sendMessage() {
@@ -1499,7 +1510,6 @@ async function sendMessage() {
   btn.disabled = true;
   if (btnCancel) btnCancel.textContent = '⛔ 転送中断';
 
-  // AbortController を生成してアップロード中に使う
   uploadAbortController = new AbortController();
 
   try {
@@ -1517,38 +1527,53 @@ async function sendMessage() {
       await saveMessages();
       showToast('送信しました');
     } else {
-      if (!selectedFile) { showToast('ファイルを選択してください', 'error'); return; }
+      if (selectedFiles.length === 0) { showToast('ファイルを選択してください', 'error'); return; }
 
       const CHUNK_THRESHOLD = 150 * 1024 * 1024; // 150MB
-      let data;
-      if (selectedFile.size < CHUNK_THRESHOLD) {
-        data = await uploadSmall(selectedFile);
-      } else {
-        data = await uploadSession(selectedFile);
+      const total = selectedFiles.length;
+
+      for (let i = 0; i < total; i++) {
+        const file = selectedFiles[i];
+
+        // 複数ファイル時はファイル番号を表示
+        if (total > 1) {
+          setUploadStatus(`ファイル ${i + 1} / ${total}：${file.name}`);
+        }
+
+        // 新しい AbortController を各ファイルごとに生成
+        uploadAbortController = new AbortController();
+
+        let data;
+        if (file.size < CHUNK_THRESHOLD) {
+          data = await uploadSmall(file);
+        } else {
+          data = await uploadSession(file);
+        }
+
+        const msg = {
+          id: (Date.now() + i).toString(),
+          type: 'file',
+          content: data.name,
+          filePath: data.path_display,
+          fileSize: file.size,
+          mimeType: file.type || 'application/octet-stream',
+          createdAt: new Date().toISOString(),
+          device: deviceName
+        };
+        messages.unshift(msg);
+        await saveMessages();
+        setProgress(0);
       }
 
-      const msg = {
-        id: Date.now().toString(),
-        type: 'file',
-        content: data.name,
-        filePath: data.path_display,
-        fileSize: selectedFile.size,
-        mimeType: selectedFile.type || 'application/octet-stream',
-        createdAt: new Date().toISOString(),
-        device: deviceName
-      };
-      messages.unshift(msg);
-      await saveMessages();
       setProgress(100);
       setUploadStatus('');
-      showToast('アップロード完了');
+      showToast(total > 1 ? `${total}件アップロード完了` : 'アップロード完了');
     }
 
     uploadAbortController = null;
     renderList(messages);
     closeCompose();
   } catch (e) {
-    // abort による中断は closeCompose 側で処理済みなので無視
     if (e.name === 'AbortError') return;
     setProgress(100);
     setUploadStatus('');
