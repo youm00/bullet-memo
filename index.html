@@ -1005,6 +1005,14 @@
       <label class="form-label">Dropbox 認証状態</label>
       <div id="authStatus" style="font-size:0.85rem; color:var(--text2); font-family:var(--font-mono); padding:8px 0;"></div>
     </div>
+    <div class="form-group" id="backupSection" style="display:none">
+      <label class="form-label">バックアップ・復元</label>
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <button class="btn btn-secondary" id="btnBackupNow" style="flex:1">📂 今すぐバックアップ</button>
+        <button class="btn btn-secondary" id="btnRestore" style="flex:1">🔄 復元</button>
+      </div>
+      <div id="backupStatus" style="font-size:11px; color:var(--text2); font-family:var(--font-mono); min-height:16px;"></div>
+    </div>
     <div class="compose-actions">
       <button class="btn btn-secondary" onclick="closeSettings()">キャンセル</button>
       <button class="btn btn-secondary" id="btnReauth" onclick="startOAuth()">🔑 Dropboxで再認証</button>
@@ -1241,6 +1249,7 @@ async function fetchMessages() {
     }
     setProgress(100);
     renderList(messages);
+    autoBackupIfNeeded(); // 起動時1日1回自動バックアップ
   } catch (e) {
     setProgress(100);
     document.getElementById('msgList').innerHTML = `
@@ -1935,6 +1944,7 @@ function dropboxHeader(obj) {
     setStatus('更新中...', 'updating');
     try {
       await fetchMessages();
+      autoBackupIfNeeded(); // 1日1回自動バックアップ（日付チェックあり・失敗無視）
       setStatus(`最終更新: ${formatTime(new Date())}`, 'active');
     } catch (e) {
       setStatus('更新失敗', '');
@@ -1974,6 +1984,154 @@ function dropboxHeader(obj) {
   // 初期状態
   if (savedEnabled) startPolling();
 })();
+
+// ── バックアップ ─────────────────────────────────────────────
+const BACKUP_FOLDER = '/backup';
+const MAX_BACKUPS   = 365;
+
+function backupFileName() {
+  const now = new Date();
+  const y  = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, '0');
+  const d  = String(now.getDate()).padStart(2, '0');
+  const h  = String(now.getHours()).padStart(2, '0');
+  const mi = String(now.getMinutes()).padStart(2, '0');
+  const s  = String(now.getSeconds()).padStart(2, '0');
+  return `${BACKUP_FOLDER}/messages_backup_${y}${mo}${d}_${h}${mi}${s}.json`;
+}
+
+async function doBackup() {
+  const $status = document.getElementById('backupStatus');
+  if ($status) { $status.style.color = 'var(--text2)'; $status.textContent = 'バックアップ中...'; }
+  try {
+    await ensureValidToken();
+    const path = backupFileName();
+    const body = new TextEncoder().encode(JSON.stringify(messages));
+    const res = await fetch(`${CONTENT_BASE}/files/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization':   `Bearer ${token}`,
+        'Content-Type':    'application/octet-stream',
+        'Dropbox-API-Arg': dropboxHeader({ path, mode: 'add', autorename: false, mute: true }),
+      },
+      body,
+    });
+    if (!res.ok) throw new Error('upload failed: ' + res.status);
+
+    // 実行日をlocalStorageに記録
+    localStorage.setItem('bm_last_backup_date', new Date().toISOString().slice(0, 10));
+
+    // 古いバックアップを自動削除（失敗しても無視）
+    pruneOldBackups().catch(() => {});
+
+    const hm = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    if ($status) { $status.style.color = 'var(--success, #4caf50)'; $status.textContent = `✅ ${path.split('/').pop()} (${hm})`; }
+  } catch (e) {
+    if ($status) { $status.style.color = 'var(--danger, #f44336)'; $status.textContent = `❌ バックアップ失敗: ${e.message}`; }
+    throw e;
+  }
+}
+
+async function listBackups() {
+  await ensureValidToken();
+  const res = await fetch(`${API_BASE}/files/list_folder`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: BACKUP_FOLDER, limit: 400 }),
+  });
+  if (res.status === 409) return []; // フォルダ未作成
+  if (!res.ok) throw new Error('list failed: ' + res.status);
+  const data = await res.json();
+  return data.entries
+    .filter(e => e.name.endsWith('.json'))
+    .sort((a, b) => b.server_modified.localeCompare(a.server_modified));
+}
+
+async function pruneOldBackups() {
+  const all = await listBackups();
+  if (all.length <= MAX_BACKUPS) return;
+  for (const entry of all.slice(MAX_BACKUPS)) {
+    await fetch(`${API_BASE}/files/delete_v2`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: entry.path_lower }),
+    });
+  }
+}
+
+async function restoreFromBackup() {
+  let backups;
+  try { backups = await listBackups(); }
+  catch (e) { showToast('一覧取得失敗: ' + e.message, 'error'); return; }
+  if (!backups.length) { showToast('バックアップファイルがありません', 'error'); return; }
+
+  // 選択用モーダルを動的生成
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--surface,#1e1e2e);border-radius:12px;padding:20px;width:340px;max-height:70vh;display:flex;flex-direction:column;gap:12px;';
+  box.innerHTML = `
+    <div style="font-weight:bold;font-size:1rem;">復元するバックアップを選択</div>
+    <div id="_restoreList" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:4px;"></div>
+    <button id="_restoreCancel" class="btn btn-secondary" style="width:100%">キャンセル</button>
+  `;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  box.querySelector('#_restoreList').append(...backups.map(b => {
+    const m = b.name.match(/messages_backup_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+    const label = m ? `${m[1]}/${m[2]}/${m[3]} ${m[4]}:${m[5]}:${m[6]}` : b.name;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-secondary';
+    btn.style.cssText = 'text-align:left;font-size:0.82rem;';
+    btn.textContent = label;
+    btn.onclick = () => { overlay.remove(); confirmAndRestore(b); };
+    return btn;
+  }));
+  box.querySelector('#_restoreCancel').onclick = () => overlay.remove();
+}
+
+async function confirmAndRestore(entry) {
+  const m = entry.name.match(/messages_backup_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+  const label = m ? `${m[1]}/${m[2]}/${m[3]} ${m[4]}:${m[5]}:${m[6]}` : entry.name;
+  if (!confirm(`「${label}」から復元しますか？\n\n⚠️ 現在のメモはすべて上書きされます。`)) return;
+  try {
+    await ensureValidToken();
+    const res = await fetch(`${CONTENT_BASE}/files/download`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Dropbox-API-Arg': dropboxHeader({ path: entry.path_lower }) },
+    });
+    if (!res.ok) throw new Error('download failed: ' + res.status);
+    messages = JSON.parse(new TextDecoder('utf-8').decode(await res.arrayBuffer()));
+    await saveMessages();
+    renderList(messages);
+    showToast('復元が完了しました');
+  } catch (e) {
+    showToast('復元失敗: ' + e.message, 'error');
+  }
+}
+
+// 1日1回の自動バックアップ（ページ読み込み時 + ポーリング毎に日付チェック）
+async function autoBackupIfNeeded() {
+  if (!token || !messages || !messages.length) return;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    if (localStorage.getItem('bm_last_backup_date') === today) return;
+    await doBackup();
+  } catch (_) { /* 自動バックアップ失敗は無視 */ }
+}
+
+// ボタンイベント登録
+document.getElementById('btnBackupNow').addEventListener('click', () => doBackup().catch(() => {}));
+document.getElementById('btnRestore').addEventListener('click', restoreFromBackup);
+
+// 設定パネルを開いたとき認証済みならバックアップセクションを表示
+// openSettings() は既存関数を上書き
+const _bmOrigOpenSettings = openSettings;
+openSettings = function() {
+  _bmOrigOpenSettings();
+  document.getElementById('backupSection').style.display = token ? '' : 'none';
+};
 </script>
 </body>
 </html>
