@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,22 +7,38 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2322C55E'/><rect x='7' y='5' width='13' height='17' rx='2' fill='%23fff' stroke='%23166534' stroke-width='1.5'/><circle cx='10' cy='10' r='1.5' fill='%2316A34A'/><line x1='13' y1='10' x2='17' y2='10' stroke='%23333' stroke-width='1.5' stroke-linecap='round'/><circle cx='10' cy='14' r='1.5' fill='%2316A34A'/><line x1='13' y1='14' x2='17' y2='14' stroke='%23333' stroke-width='1.5' stroke-linecap='round'/><circle cx='10' cy='18' r='1.5' fill='%2316A34A'/><line x1='13' y1='18' x2='16' y2='18' stroke='%23333' stroke-width='1.5' stroke-linecap='round'/><rect x='19' y='17' width='4' height='9' rx='1' fill='%23FACC15' stroke='%23CA8A04' stroke-width='0.8' transform='rotate(-35 21 22)'/><polygon points='20,25 22,27.5 24,25' fill='%23FEF08A' transform='rotate(-35 21 22)'/></svg>">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
+  /* ── テーマ非依存の固定値 ── */
   :root {
-    --bg: #0e0e11;
-    --surface: #16161a;
-    --surface2: #1e1e24;
-    --border: #2a2a35;
-    --accent: #7b61ff;
-    --accent2: #ff6b6b;
-    --text: #e8e8f0;
-    --text2: #888899;
-    --text3: #555566;
+    --accent:     #7b61ff;
+    --accent2:    #ff6b6b;
     --memo-color: #7b61ff;
     --file-color: #ff6b6b;
-    --success: #4ecdc4;
-    --radius: 10px;
-    --font-ui: 'Syne', sans-serif;
-    --font-mono: 'DM Mono', monospace;
+    --success:    #4ecdc4;
+    --radius:     10px;
+    --font-ui:    'Syne', sans-serif;
+    --font-mono:  'DM Mono', monospace;
+  }
+
+  /* ── ダークモード（デフォルト）── */
+  [data-theme="dark"] {
+    --bg:      #0e0e11;
+    --surface: #16161a;
+    --surface2:#1e1e24;
+    --border:  #2a2a35;
+    --text:    #e8e8f0;
+    --text2:   #888899;
+    --text3:   #555566;
+  }
+
+  /* ── ライトモード ── */
+  [data-theme="light"] {
+    --bg:      #f2f3f7;
+    --surface: #ffffff;
+    --surface2:#eef0f6;
+    --border:  #dde0ec;
+    --text:    #1a1a2e;
+    --text2:   #5a5f7a;
+    --text3:   #9096b2;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -34,6 +50,7 @@
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    transition: background 0.25s, color 0.25s;
   }
 
   /* ── Header ── */
@@ -900,6 +917,7 @@
   </div>
   <div class="header-actions">
     <span class="count-badge" id="countBadge">0 items</span>
+    <button class="btn-icon" id="themeBtn" onclick="toggleTheme()" title="テーマ切替" style="font-size:14px;">☀️</button>
     <button class="btn-icon" onclick="refreshMessages()" title="更新">↻</button>
     <button class="btn-icon" onclick="openSettings()" title="設定">⚙</button>
   </div>
@@ -2132,6 +2150,22 @@ openSettings = function() {
   _bmOrigOpenSettings();
   document.getElementById('backupSection').style.display = token ? '' : 'none';
 };
+
+// ── テーマ切替 ───────────────────────────────────────────────
+(function initTheme() {
+  const THEME_KEY = 'bm-theme';
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const btn = document.getElementById('themeBtn');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+    localStorage.setItem(THEME_KEY, theme);
+  }
+  window.toggleTheme = function() {
+    const cur = document.documentElement.getAttribute('data-theme');
+    applyTheme(cur === 'dark' ? 'light' : 'dark');
+  };
+  applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+})();
 </script>
 </body>
 </html>
