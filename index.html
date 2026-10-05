@@ -659,25 +659,7 @@
     padding: 2px 8px;
     background: var(--surface2);
     border-radius: 20px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
     white-space: nowrap;
-  }
-
-  .storage-bar-wrap {
-    width: 48px;
-    height: 4px;
-    background: var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
-  .storage-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-    background: var(--accent);
-    transition: width 0.4s;
   }
 
   /* ── Scrollbar for detail ── */
@@ -945,10 +927,7 @@
   </div>
   <div class="header-actions">
     <span class="count-badge" id="countBadge">0 items</span>
-    <span class="storage-badge" id="storageBadge" title="Dropbox使用容量">
-      <span class="storage-bar-wrap"><span class="storage-bar-fill" id="storageBarFill" style="width:0%"></span></span>
-      <span id="storageText">-- / --</span>
-    </span>
+    <span class="storage-badge" id="storageBadge" title="Dropbox使用容量">💾 <span id="storageText">-- / --</span></span>
     <button class="btn-icon" id="themeBtn" onclick="toggleTheme()" title="テーマ切替" style="font-size:14px;">☀️</button>
     <button class="btn-icon" onclick="refreshMessages()" title="更新">↻</button>
     <button class="btn-icon" onclick="openSettings()" title="設定">⚙</button>
@@ -1343,13 +1322,12 @@ async function updateStorageBadge() {
     const totalStr = allocated ? fmt(allocated) : '?';
     const pct      = allocated ? Math.min((used / allocated) * 100, 100) : 0;
 
-    // バーの色：80%超で警告色
-    const fillColor = pct >= 80 ? '#e53935' : pct >= 60 ? '#fb8c00' : 'var(--accent)';
-
-    document.getElementById('storageText').textContent    = `${usedStr} / ${totalStr}`;
-    document.getElementById('storageBarFill').style.width = `${pct.toFixed(1)}%`;
-    document.getElementById('storageBarFill').style.background = fillColor;
-    document.getElementById('storageBadge').title         = `Dropbox使用容量: ${pct.toFixed(1)}%`;
+    // 使用率によってテキスト色を変える：80%超で警告色
+    const textColor = pct >= 80 ? '#e53935' : pct >= 60 ? '#fb8c00' : null;
+    const textEl = document.getElementById('storageText');
+    textEl.textContent  = `${usedStr} / ${totalStr}`;
+    textEl.style.color  = textColor || '';
+    document.getElementById('storageBadge').title = `Dropbox使用容量: ${pct.toFixed(1)}%`;
   } catch (e) {
     // 失敗しても表示に影響させない
     console.warn('storage badge error:', e);
