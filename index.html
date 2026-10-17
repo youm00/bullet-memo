@@ -47,7 +47,8 @@
     background: var(--bg);
     color: var(--text);
     font-family: var(--font-ui);
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     transition: background 0.25s, color 0.25s;
@@ -118,7 +119,7 @@
     grid-template-columns: 320px 1fr;
     flex: 1;
     overflow: hidden;
-    height: calc(100vh - 61px);
+    min-height: 0;
   }
 
   /* ── Sidebar ── */
@@ -569,7 +570,7 @@
   /* ── Progress bar ── */
   .progress-bar-wrap {
     position: fixed;
-    top: 61px;
+    top: 95px;
     left: 0; right: 0;
     height: 3px;
     background: var(--border);
