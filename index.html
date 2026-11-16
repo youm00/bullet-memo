@@ -43,6 +43,25 @@
     --text3:   #9096b2;
   }
 
+  /* ── ダークブルーモード ── */
+  [data-theme="blue"] {
+    --bg:      #1f2d3a;
+    --surface: #283a4a;
+    --surface2:#31465a;
+    --border:  #3b5063;
+    --text:    #e6edf3;
+    --text2:   #7b8d9c;
+    --text3:   #60758a;
+    --accent:  #8cc4ff;
+    --accent2: #f08080;
+    --success: #7ed6a0;
+    --memo-color: #8cc4ff;
+    --file-color: #f08080;
+  }
+  [data-theme="blue"] .btn-primary { color: #0f1e2b; }
+  [data-theme="blue"] .btn-primary:hover { background: #a6d3ff; }
+  [data-theme="blue"] .toggle-wrap input:checked + .toggle-track::after { background: #0f1e2b; }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
@@ -112,7 +131,7 @@
   .btn-icon:hover {
     border-color: var(--accent);
     color: var(--accent);
-    background: rgba(123,97,255,0.08);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
   }
 
   /* ── Layout ── */
@@ -188,7 +207,7 @@
   }
 
   .msg-item:hover { background: var(--surface2); }
-  .msg-item.active { background: rgba(123,97,255,0.1); border-left: 2px solid var(--accent); }
+  .msg-item.active { background: color-mix(in srgb, var(--accent) 10%, transparent); border-left: 2px solid var(--accent); }
 
   .msg-icon {
     width: 32px; height: 32px;
@@ -199,11 +218,11 @@
     margin-top: 2px;
   }
 
-  .msg-icon.memo { background: rgba(123,97,255,0.15); color: var(--memo-color); }
-  .msg-icon.file { background: rgba(255,107,107,0.15); color: var(--file-color); }
+  .msg-icon.memo { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--memo-color); }
+  .msg-icon.file { background: color-mix(in srgb, var(--accent2) 15%, transparent); color: var(--file-color); }
   .msg-icon.image { background: rgba(78,205,196,0.15); color: var(--success); }
   .msg-icon.audio { background: rgba(255,200,87,0.15); color: #ffc857; }
-  .msg-icon.video { background: rgba(255,107,107,0.15); color: var(--file-color); }
+  .msg-icon.video { background: color-mix(in srgb, var(--accent2) 15%, transparent); color: var(--file-color); }
 
   .msg-body { flex: 1; min-width: 0; }
 
@@ -276,12 +295,12 @@
   .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
 
   .btn-danger {
-    background: rgba(255,107,107,0.1);
+    background: color-mix(in srgb, var(--accent2) 10%, transparent);
     color: var(--accent2);
-    border: 1px solid rgba(255,107,107,0.2);
+    border: 1px solid color-mix(in srgb, var(--accent2) 20%, transparent);
   }
 
-  .btn-danger:hover { background: rgba(255,107,107,0.2); }
+  .btn-danger:hover { background: color-mix(in srgb, var(--accent2) 20%, transparent); }
 
   .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
@@ -329,8 +348,8 @@
     text-transform: uppercase;
   }
 
-  .badge-memo { background: rgba(123,97,255,0.15); color: var(--memo-color); }
-  .badge-file { background: rgba(255,107,107,0.15); color: var(--file-color); }
+  .badge-memo { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--memo-color); }
+  .badge-file { background: color-mix(in srgb, var(--accent2) 15%, transparent); color: var(--file-color); }
 
   .detail-meta {
     font-size: 0.78rem;
@@ -485,7 +504,7 @@
   .file-drop-zone:hover, .file-drop-zone.dragover {
     border-color: var(--accent);
     color: var(--accent);
-    background: rgba(123,97,255,0.05);
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
   }
 
   .file-drop-icon { font-size: 28px; margin-bottom: 10px; }
@@ -2206,20 +2225,31 @@ openSettings = function() {
   document.getElementById('backupSection').style.display = token ? '' : 'none';
 };
 
-// ── テーマ切替 ───────────────────────────────────────────────
+// ── テーマ切替（ダーク → ライト → ダークブルー）──────────────
 (function initTheme() {
-  const THEME_KEY = 'bm-theme';
+  const THEME_KEY   = 'bm-theme';
+  const THEMES      = ['dark', 'light', 'blue'];
+  const THEME_ICON  = { dark: '🌙', light: '☀️', blue: '🌊' };
+  const THEME_LABEL = { dark: 'ダーク', light: 'ライト', blue: 'ダークブルー' };
+
+  function nextOf(theme) {
+    return THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  }
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     const btn = document.getElementById('themeBtn');
-    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+    if (btn) {
+      btn.textContent = THEME_ICON[theme];
+      btn.title = `テーマ: ${THEME_LABEL[theme]}（クリックで ${THEME_LABEL[nextOf(theme)]} へ）`;
+    }
     localStorage.setItem(THEME_KEY, theme);
   }
   window.toggleTheme = function() {
     const cur = document.documentElement.getAttribute('data-theme');
-    applyTheme(cur === 'dark' ? 'light' : 'dark');
+    applyTheme(nextOf(THEMES.includes(cur) ? cur : 'dark'));
   };
-  applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+  const saved = localStorage.getItem(THEME_KEY);
+  applyTheme(THEMES.includes(saved) ? saved : 'dark');
 })();
 </script>
 </body>
