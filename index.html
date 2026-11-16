@@ -2079,7 +2079,6 @@ function dropboxHeader(obj) {
 
 // ── バックアップ ─────────────────────────────────────────────
 const BACKUP_FOLDER = '/backup';
-const MAX_BACKUPS   = 365;
 
 function backupFileName() {
   const now = new Date();
@@ -2113,9 +2112,6 @@ async function doBackup() {
     // 実行日をlocalStorageに記録
     localStorage.setItem('bm_last_backup_date', new Date().toISOString().slice(0, 10));
 
-    // 古いバックアップを自動削除（失敗しても無視）
-    pruneOldBackups().catch(() => {});
-
     const hm = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
     if ($status) { $status.style.color = 'var(--success, #4caf50)'; $status.textContent = `✅ ${path.split('/').pop()} (${hm})`; }
   } catch (e) {
@@ -2133,22 +2129,22 @@ async function listBackups() {
   });
   if (res.status === 409) return []; // フォルダ未作成
   if (!res.ok) throw new Error('list failed: ' + res.status);
-  const data = await res.json();
-  return data.entries
-    .filter(e => e.name.endsWith('.json'))
-    .sort((a, b) => b.server_modified.localeCompare(a.server_modified));
-}
-
-async function pruneOldBackups() {
-  const all = await listBackups();
-  if (all.length <= MAX_BACKUPS) return;
-  for (const entry of all.slice(MAX_BACKUPS)) {
-    await fetch(`${API_BASE}/files/delete_v2`, {
+  let data = await res.json();
+  const all = [...data.entries];
+  // 件数が多い場合は続きを取得する（has_more が true の間）
+  while (data.has_more) {
+    const more = await fetch(`${API_BASE}/files/list_folder/continue`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: entry.path_lower }),
+      body: JSON.stringify({ cursor: data.cursor }),
     });
+    if (!more.ok) throw new Error('list continue failed: ' + more.status);
+    data = await more.json();
+    all.push(...data.entries);
   }
+  return all
+    .filter(e => e.name.endsWith('.json'))
+    .sort((a, b) => b.server_modified.localeCompare(a.server_modified));
 }
 
 async function restoreFromBackup() {
